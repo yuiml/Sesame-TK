@@ -6,6 +6,7 @@ import fansirsqi.xposed.sesame.hook.ApplicationHook
 import fansirsqi.xposed.sesame.model.BaseModel
 import fansirsqi.xposed.sesame.model.CustomSettings
 import fansirsqi.xposed.sesame.model.Model
+import fansirsqi.xposed.sesame.task.manualtask.ManualTask
 import fansirsqi.xposed.sesame.util.Log
 import fansirsqi.xposed.sesame.util.TimeUtil
 import kotlinx.coroutines.CancellationException
@@ -57,6 +58,12 @@ class CoroutineTaskRunner(allModels: List<Model>) {
         rounds: Int = BaseModel.taskExecutionRounds.value
     ) = coroutineScope { // 使用 coroutineScope 创建子作用域
         val startTime = System.currentTimeMillis()
+
+        // 【互斥检查】如果手动任务流正在运行，则跳过本次自动执行
+        if (ManualTask.isManualRunning) {
+            Log.record(TAG, "⏸ 检测到“手动庄园任务流”正在运行中，跳过本次自动任务调度")
+            return@coroutineScope
+        }
 
         if (isFirst) {
             ApplicationHook.updateDay()
@@ -113,6 +120,11 @@ class CoroutineTaskRunner(allModels: List<Model>) {
         // 创建所有任务的 Deferred 对象
         val deferreds = tasksToRun.map { task ->
             async {
+                // 【互斥检查】再次检查手动任务，防止并发启动
+                if (ManualTask.isManualRunning) {
+                     Log.record(TAG, "⏸ 任务 ${task.getName()} 因手动模式启动而中止")
+                     return@async
+                }
                 semaphore.withPermit {
                     executeSingleTask(task, round)
                 }
